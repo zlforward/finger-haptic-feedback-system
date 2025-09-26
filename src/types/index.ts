@@ -123,13 +123,16 @@ export interface TouchHeatmapData {
 
 // 碰撞事件
 export interface CollisionEvent {
+  id?: string;
   objectId: string;
   objectName: string;
-  contactPoint: Point3D;
-  force: number;
+  position?: Point3D;
+  contactPoint?: Point3D;
+  force?: number;
   material: MaterialProperties;
   timestamp: number;
-  type: 'enter' | 'stay' | 'exit';
+  type: 'enter' | 'stay' | 'exit' | 'touch_start' | 'touch_end';
+  duration?: number;
 }
 
 export interface CollisionState {

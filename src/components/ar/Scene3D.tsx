@@ -85,7 +85,7 @@ const Interactive3DObject: React.FC<Interactive3DObjectProps> = ({
     if (!fingerPosition2D || !meshRef.current) return;
 
     const mesh = meshRef.current;
-    const { camera, gl } = useThree.getState();
+    const { camera, gl } = useThree();
     
     // 获取物体的屏幕坐标
     const objectWorldPosition = new THREE.Vector3();
