@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  finger-haptic-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.finger-haptic.rule=Host(`localhost`)"
+      - "traefik.http.services.finger-haptic.loadbalancer.server.port=80"
+
+  # 可选：添加反向代理
+  # nginx-proxy:
+  #   image: nginx:alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx-proxy.conf:/etc/nginx/nginx.conf:ro
+  #   depends_on:
+  #     - finger-haptic-app
+  #   restart: unless-stopped
+
+networks:
+  default:
+    name: finger-haptic-network

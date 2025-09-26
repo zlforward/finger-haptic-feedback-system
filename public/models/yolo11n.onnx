@@ -1,0 +1,39 @@
+# YOLO11 模型占位符文件
+
+这是一个占位符文件。实际的YOLO11 ONNX模型文件应该是二进制格式。
+
+## 获取真实的YOLO11模型
+
+由于YOLO11模型文件通常很大（20-100MB），我们提供以下获取方式：
+
+### 方法1：从官方源下载
+1. 访问 Ultralytics YOLO11 官方仓库
+2. 下载预训练的 yolo11n.onnx 模型
+3. 替换此文件
+
+### 方法2：使用在线模型
+```javascript
+// 在配置中使用CDN链接
+modelUrl: 'https://github.com/ultralytics/assets/releases/download/v0.0.0/yolo11n.onnx'
+```
+
+### 方法3：本地转换
+```bash
+# 使用Python和ultralytics库
+pip install ultralytics
+python -c "from ultralytics import YOLO; YOLO('yolo11n.pt').export(format='onnx')"
+```
+
+## 临时解决方案
+
+当前系统已配置为在模型加载失败时优雅降级：
+- 物体检测功能将被禁用
+- 手部追踪功能仍然正常工作
+- 3D交互和AR功能不受影响
+
+## 模型要求
+
+- 格式：ONNX (.onnx)
+- 输入尺寸：640x640
+- 输出格式：YOLO11标准格式
+- 大小：建议 < 50MB

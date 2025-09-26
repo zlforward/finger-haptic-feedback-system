@@ -1,0 +1,17 @@
+这是一个占位符文件。实际的GLB模型文件应该是二进制格式。
+
+要添加真实的3D模型：
+1. 从Blender、3ds Max等软件导出GLB格式
+2. 或从免费资源网站下载GLB模型
+3. 替换此文件
+
+推荐资源：
+- Sketchfab (https://sketchfab.com/)
+- Poly Haven (https://polyhaven.com/)
+- Kenney Assets (https://kenney.nl/)
+
+模型要求：
+- 格式：GLB (推荐) 或 GLTF
+- 大小：< 5MB
+- 面数：< 10,000 三角面
+- 包含材质和纹理
