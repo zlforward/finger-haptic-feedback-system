@@ -12,6 +12,7 @@ import {
 } from '@react-three/drei';
 import * as THREE from 'three';
 import { useAppStore } from '../../stores/useAppStore';
+import CoordinateDisplay from './CoordinateDisplay';
 import type { Virtual3DObject, Point3D, Point2D, CollisionEvent } from '../../types';
 
 // 3D物体组件
@@ -20,20 +21,36 @@ interface Interactive3DObjectProps {
   fingerPosition?: Point3D | null;
   fingerPosition2D?: Point2D | null;
   onCollision?: (collision: CollisionEvent) => void;
+  onCoordinateUpdate?: (data: {
+    objectCoordinates?: {
+      world3D: Point3D;
+      screen2D: Point2D;
+    } | null;
+    pixelDistance?: number | null;
+    objectName?: string;
+  }) => void;
 }
 
 const Interactive3DObject: React.FC<Interactive3DObjectProps> = ({ 
   object, 
   fingerPosition, 
   fingerPosition2D,
-  onCollision 
+  onCollision,
+  onCoordinateUpdate
 }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const [isColliding, setIsColliding] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [touchStartTime, setTouchStartTime] = useState<number | null>(null);
   const [particleSystem, setParticleSystem] = useState<THREE.Points | null>(null);
+  const [objectCoordinates, setObjectCoordinates] = useState<{
+    world3D: Point3D;
+    screen2D: Point2D;
+  } | null>(null);
   const { actions } = useAppStore();
+  
+  // 将useThree移到组件顶层
+  const { camera, gl } = useThree();
 
   // 加载3D模型（使用条件渲染避免Hook条件调用）
   const ModelLoader: React.FC<{ modelUrl?: string }> = ({ modelUrl }) => {
@@ -82,10 +99,9 @@ const Interactive3DObject: React.FC<Interactive3DObjectProps> = ({
 
   // 2D坐标投影碰撞检测
   useEffect(() => {
-    if (!fingerPosition2D || !meshRef.current) return;
+    if (!meshRef.current) return;
 
     const mesh = meshRef.current;
-    const { camera, gl } = useThree();
     
     // 获取物体的屏幕坐标
     const objectWorldPosition = new THREE.Vector3();
@@ -101,115 +117,153 @@ const Interactive3DObject: React.FC<Interactive3DObjectProps> = ({
     const objectPixelX = (objectScreenPosition.x * 0.5 + 0.5) * canvasWidth;
     const objectPixelY = (objectScreenPosition.y * -0.5 + 0.5) * canvasHeight;
     
-    // 计算距离
-    const distance = Math.sqrt(
-      Math.pow(fingerPosition2D.x - objectPixelX, 2) + 
-      Math.pow(fingerPosition2D.y - objectPixelY, 2)
-    );
-    
-    // 碰撞阈值（像素）
-    const collisionThreshold = 50;
-    
-    const wasColliding = isColliding;
-    const nowColliding = distance < collisionThreshold;
-
-    console.log('🎯 2D碰撞检测:', {
-      objectId: object.id,
-      fingerPosition2D,
-      objectPixelPosition: { x: objectPixelX, y: objectPixelY },
-      distance,
-      threshold: collisionThreshold,
-      isColliding: nowColliding
+    // 更新坐标状态
+    setObjectCoordinates({
+      world3D: {
+        x: objectWorldPosition.x,
+        y: objectWorldPosition.y,
+        z: objectWorldPosition.z
+      },
+      screen2D: {
+        x: objectPixelX,
+        y: objectPixelY
+      }
     });
 
-    if (nowColliding !== wasColliding) {
-      setIsColliding(nowColliding);
+    // 计算像素距离（如果有指尖位置）
+    let pixelDistance: number | null = null;
+    if (fingerPosition2D) {
+      pixelDistance = Math.sqrt(
+        Math.pow(fingerPosition2D.x - objectPixelX, 2) + 
+        Math.pow(fingerPosition2D.y - objectPixelY, 2)
+      );
+    }
+
+    // 调用坐标更新回调
+    if (onCoordinateUpdate) {
+      onCoordinateUpdate({
+        objectCoordinates: {
+          world3D: {
+            x: objectWorldPosition.x,
+            y: objectWorldPosition.y,
+            z: objectWorldPosition.z
+          },
+          screen2D: {
+            x: objectPixelX,
+            y: objectPixelY
+          }
+        },
+        pixelDistance,
+        objectName: object.name
+      });
+    }
+
+    // 如果有指尖位置，进行碰撞检测
+    if (fingerPosition2D) {
+      // 碰撞阈值（像素）
+      const collisionThreshold = 50;
       
-      if (nowColliding) {
-        // 开始触碰
-        setTouchStartTime(Date.now());
+      const wasColliding = isColliding;
+      const nowColliding = pixelDistance !== null && pixelDistance < collisionThreshold;
+
+      console.log('🎯 2D碰撞检测:', {
+        objectId: object.id,
+        fingerPosition2D,
+        objectPixelPosition: { x: objectPixelX, y: objectPixelY },
+        distance: pixelDistance,
+        threshold: collisionThreshold,
+        isColliding: nowColliding
+      });
+
+      if (nowColliding !== wasColliding) {
+        setIsColliding(nowColliding);
         
-        // 添加调试日志
-        console.log('🎯 Scene3D: 2D碰撞触碰开始:', {
-          objectId: object.id,
-          objectName: object.name,
-          materialType: object.material.hardness > 0.5 ? 'hard' : 'soft',
-          fingerPosition2D,
-          objectPixelPosition: { x: objectPixelX, y: objectPixelY },
-          distance,
-          hasOnCollisionCallback: !!onCollision
-        });
-        
-        // 增加触碰计数
-        actions.incrementTouchCount(object.id, object.material.hardness > 0.5 ? 'hard' : 'soft');
-        
-        // 创建一个估算的3D位置用于热力图
-        const estimated3DPosition: Point3D = {
-          x: objectWorldPosition.x,
-          y: objectWorldPosition.y,
-          z: objectWorldPosition.z
-        };
-        actions.addTouchHeatmapPoint(object.id, estimated3DPosition, 1.0);
-        
-        // 触发碰撞回调
-        if (onCollision) {
-          const collisionEvent: CollisionEvent = {
-            id: `collision-2d-${object.id}-${Date.now()}`,
+        if (nowColliding) {
+          // 开始触碰
+          setTouchStartTime(Date.now());
+          
+          // 添加调试日志
+          console.log('🎯 Scene3D: 2D碰撞触碰开始:', {
             objectId: object.id,
             objectName: object.name,
-            type: 'touch_start',
-            timestamp: Date.now(),
-            position: estimated3DPosition,
-            material: object.material
-          };
+            materialType: object.material.hardness > 0.5 ? 'hard' : 'soft',
+            fingerPosition2D,
+            objectPixelPosition: { x: objectPixelX, y: objectPixelY },
+            distance,
+            hasOnCollisionCallback: !!onCollision
+          });
           
-          console.log('📡 Scene3D: 触发2D碰撞回调:', collisionEvent);
-          onCollision(collisionEvent);
-        } else {
-          console.warn('⚠️ Scene3D: onCollision回调未定义');
-        }
-        
-        // 创建粒子效果
-        if (meshRef.current) {
-          const particles = createParticleEffect.clone();
-          meshRef.current.add(particles);
-          setParticleSystem(particles);
-        }
-      } else if (touchStartTime) {
-        // 结束触碰，计算持续时间
-        const duration = Date.now() - touchStartTime;
-        console.log('🎯 Scene3D: 2D碰撞触碰结束:', { duration });
-        
-        // 触发结束碰撞回调
-        if (onCollision) {
-          const collisionEvent: CollisionEvent = {
-            id: `collision-2d-end-${object.id}-${Date.now()}`,
-            objectId: object.id,
-            objectName: object.name,
-            type: 'touch_end',
-            timestamp: Date.now(),
-            position: {
-              x: objectWorldPosition.x,
-              y: objectWorldPosition.y,
-              z: objectWorldPosition.z
-            },
-            material: object.material
-          };
+          // 增加触碰计数
+          actions.incrementTouchCount(object.id, object.material.hardness > 0.5 ? 'hard' : 'soft');
           
-          onCollision(collisionEvent);
-        }
-        
-        actions.updateTouchDuration(duration);
-        setTouchStartTime(null);
-        
-        // 清理粒子效果
-        if (particleSystem && meshRef.current) {
-          meshRef.current.remove(particleSystem);
-          setParticleSystem(null);
+          // 创建一个估算的3D位置用于热力图
+          const estimated3DPosition: Point3D = {
+            x: objectWorldPosition.x,
+            y: objectWorldPosition.y,
+            z: objectWorldPosition.z
+          };
+          actions.addTouchHeatmapPoint(object.id, estimated3DPosition, 1.0);
+          
+          // 触发碰撞回调
+          if (onCollision) {
+            const collisionEvent: CollisionEvent = {
+              id: `collision-2d-${object.id}-${Date.now()}`,
+              objectId: object.id,
+              objectName: object.name,
+              type: 'touch_start',
+              timestamp: Date.now(),
+              position: estimated3DPosition,
+              material: object.material
+            };
+            
+            console.log('📡 Scene3D: 触发2D碰撞回调:', collisionEvent);
+            onCollision(collisionEvent);
+          } else {
+            console.warn('⚠️ Scene3D: onCollision回调未定义');
+          }
+          
+          // 创建粒子效果
+          if (meshRef.current) {
+            const particles = createParticleEffect.clone();
+            meshRef.current.add(particles);
+            setParticleSystem(particles);
+          }
+        } else if (touchStartTime) {
+          // 结束触碰，计算持续时间
+          const duration = Date.now() - touchStartTime;
+          console.log('🎯 Scene3D: 2D碰撞触碰结束:', { duration });
+          
+          // 触发结束碰撞回调
+          if (onCollision) {
+            const collisionEvent: CollisionEvent = {
+              id: `collision-2d-end-${object.id}-${Date.now()}`,
+              objectId: object.id,
+              objectName: object.name,
+              type: 'touch_end',
+              timestamp: Date.now(),
+              position: {
+                x: objectWorldPosition.x,
+                y: objectWorldPosition.y,
+                z: objectWorldPosition.z
+              },
+              material: object.material
+            };
+            
+            onCollision(collisionEvent);
+          }
+          
+          actions.updateTouchDuration(duration);
+          setTouchStartTime(null);
+          
+          // 清理粒子效果
+          if (particleSystem && meshRef.current) {
+            meshRef.current.remove(particleSystem);
+            setParticleSystem(null);
+          }
         }
       }
     }
-  }, [fingerPosition2D, object, isColliding, touchStartTime, actions, onCollision, createParticleEffect, particleSystem]);
+  }, [fingerPosition2D, object, isColliding, touchStartTime, actions, onCollision, createParticleEffect, particleSystem, camera, gl]);
 
   // 原有的3D碰撞检测（作为备用）
   useEffect(() => {
@@ -429,6 +483,16 @@ const Interactive3DObject: React.FC<Interactive3DObjectProps> = ({
             <div className="text-xs text-gray-300">
               硬度: {(object.material.hardness * 100).toFixed(0)}%
             </div>
+            {objectCoordinates && (
+              <>
+                <div className="text-xs text-blue-300 mt-1">
+                  3D坐标: ({objectCoordinates.world3D.x.toFixed(2)}, {objectCoordinates.world3D.y.toFixed(2)}, {objectCoordinates.world3D.z.toFixed(2)})
+                </div>
+                <div className="text-xs text-green-300">
+                  2D坐标: ({objectCoordinates.screen2D.x.toFixed(0)}, {objectCoordinates.screen2D.y.toFixed(0)})
+                </div>
+              </>
+            )}
             {isColliding && (
               <>
                 <div className="text-xs text-red-300">正在接触</div>
@@ -535,6 +599,33 @@ const Scene3D: React.FC<Scene3DProps> = ({
 }) => {
   const { virtual3DObjects, arSession, interactionMode } = useAppStore();
   const [cameraPosition, setCameraPosition] = useState<[number, number, number]>([2, 2, 2]);
+  
+  // 全局坐标显示状态
+  const [globalCoordinates, setGlobalCoordinates] = useState<{
+    fingerPosition2D?: Point2D | null;
+    objectCoordinates?: {
+      world3D: Point3D;
+      screen2D: Point2D;
+    } | null;
+    pixelDistance?: number | null;
+    objectName?: string;
+  }>({});
+
+  // 更新全局坐标状态
+  const handleCoordinateUpdate = (data: {
+    objectCoordinates?: {
+      world3D: Point3D;
+      screen2D: Point2D;
+    } | null;
+    pixelDistance?: number | null;
+    objectName?: string;
+  }) => {
+    setGlobalCoordinates(prev => ({
+      ...prev,
+      fingerPosition2D,
+      ...data
+    }));
+  };
 
   // 根据交互模式调整相机位置
   useEffect(() => {
@@ -620,6 +711,7 @@ const Scene3D: React.FC<Scene3DProps> = ({
             fingerPosition={fingerPosition}
             fingerPosition2D={fingerPosition2D}
             onCollision={onCollision}
+            onCoordinateUpdate={handleCoordinateUpdate}
           />
         ))}
         
@@ -652,6 +744,14 @@ const Scene3D: React.FC<Scene3DProps> = ({
           </div>
         </Html>
       </Canvas>
+      
+      {/* 坐标显示面板 */}
+      <CoordinateDisplay
+        fingerPosition2D={globalCoordinates.fingerPosition2D}
+        objectCoordinates={globalCoordinates.objectCoordinates}
+        pixelDistance={globalCoordinates.pixelDistance}
+        objectName={globalCoordinates.objectName}
+      />
     </div>
   );
 };
